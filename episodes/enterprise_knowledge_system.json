@@ -1,0 +1,228 @@
+{
+    "title": "Designing an Enterprise Knowledge System",
+    "output_file": "Enterprise_Knowledge_System_AWS_Azure.mp4",
+    "output_dir": "output",
+    "voice": "en-US-ChristopherNeural",
+    "theme": {
+        "bg_color": [20, 24, 33],
+        "card_color": [30, 36, 50],
+        "accent_color": [56, 189, 248],
+        "alert_color": [239, 68, 68],
+        "text_main": [240, 244, 250],
+        "text_muted": [156, 163, 175]
+    },
+    "scenes": [
+        {
+            "id": "scene_01_hook",
+            "narration": "Anyone can connect a vector database to a language model in twenty lines of code. It looks like magic in a notebook, but in production, naive vector retrieval fails. You face P99 latency spikes over eight seconds, permission leaks of confidential compensation data, and semantic drift returning draft documents from 2022 instead of audited filings. Toy RAG is a demo. Production RAG is a distributed systems problem.",
+            "visual": {
+                "type": "bullets",
+                "title": "PROTOTYPE vs PRODUCTION RAG",
+                "subtitle": "Bridging the gap between 20-line demos and enterprise knowledge systems",
+                "items": [
+                    "[!] WEEKEND DEMO PITFALLS:",
+                    "    - Unbounded P99 latency spikes over 8.4 seconds",
+                    "    - Sensitive document ACL leakage (Confidential HR & compensation data exposed)",
+                    "    - Semantic drift returning outdated 2022 drafts instead of audited filings",
+                    "",
+                    "[+] ENTERPRISE KNOWLEDGE ARCHITECTURE:",
+                    "    - Asynchronous Event-Driven Ingestion with Parent-Child chunking",
+                    "    - Zero-Trust ACL filters injected directly into vector queries",
+                    "    - Two-stage hybrid search combined with Cross-Encoder re-ranking"
+                ]
+            }
+        },
+        {
+            "id": "scene_02_architecture",
+            "narration": "To solve this, we separate our system into two completely decoupled planes. On the left, our Asynchronous Ingestion Plane uses queues on AWS or Azure to extract structure and index security metadata out of band. On the right, our Query Plane authenticates user identity claims before dispatching pre-filtered hybrid queries to the vector store.",
+            "visual": {
+                "type": "diagram",
+                "title": "Decoupled Enterprise RAG Topology (AWS & Azure)",
+                "layout": "LR",
+                "clusters": [
+                    {
+                        "name": "cluster_ingest",
+                        "label": "Ingestion Plane (Async / Event-Driven)",
+                        "nodes": [
+                            {
+                                "id": "SRC",
+                                "label": "Document Sources\n(S3 / Blob / SharePoint)"
+                            },
+                            {
+                                "id": "QUEUE",
+                                "label": "Event Bus / Queue\n(SQS / Event Grid)"
+                            },
+                            {
+                                "id": "WORKER",
+                                "label": "Ingestion Worker\n(Spring Boot on EKS / AKS)",
+                                "color": "#0284c7"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "cluster_query",
+                        "label": "Query Plane (Low-Latency / Synchronous)",
+                        "nodes": [
+                            {
+                                "id": "USER",
+                                "label": "Authenticated Query\n(JWT Claims)"
+                            },
+                            {
+                                "id": "ORCH",
+                                "label": "Orchestrator Service\n(Spring Boot 3 / Spring AI)",
+                                "color": "#7e22ce"
+                            },
+                            {
+                                "id": "LLM",
+                                "label": "Foundation Model\n(Bedrock Claude / Azure OpenAI)",
+                                "color": "#4338ca"
+                            }
+                        ]
+                    }
+                ],
+                "standalone_nodes": [
+                    {
+                        "id": "VDB",
+                        "label": "Hybrid Search Engine\n(OpenSearch / Azure AI Search)\n[Vector + BM25 + ACL Metadata]",
+                        "shape": "cylinder",
+                        "color": "#0f766e"
+                    }
+                ],
+                "edges": [
+                    {
+                        "from": "SRC",
+                        "to": "QUEUE"
+                    },
+                    {
+                        "from": "QUEUE",
+                        "to": "WORKER"
+                    },
+                    {
+                        "from": "WORKER",
+                        "to": "VDB",
+                        "label": "Embed & Index"
+                    },
+                    {
+                        "from": "USER",
+                        "to": "ORCH"
+                    },
+                    {
+                        "from": "ORCH",
+                        "to": "VDB",
+                        "label": "Hybrid Query + ACL Pre-Filter"
+                    },
+                    {
+                        "from": "VDB",
+                        "to": "ORCH",
+                        "label": "Top Candidates"
+                    },
+                    {
+                        "from": "ORCH",
+                        "to": "LLM",
+                        "label": "Guarded Context"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "scene_03_act1_ingestion",
+            "narration": "Act 1 focuses on the Asynchronous Ingestion Plane. Document parsing and embedding generation must never bind synchronously to user API lifecycles. We employ Parent-Child hierarchical chunking: small 128-token chunks for dense embedding retrieval mapped back to 1000-token parent paragraphs for complete LLM context assembly.",
+            "visual": {
+                "type": "bullets",
+                "title": "ACT 1: ASYNCHRONOUS INGESTION PLANE",
+                "subtitle": "Decoupling document parsing, semantic chunking, and embedding generation",
+                "items": [
+                    "[+] ARCHITECTURAL RULE:",
+                    "    - Never embed on the fly or bind document processing to synchronous user APIs",
+                    "",
+                    "[+] HIERARCHICAL CHUNKING PATTERNS:",
+                    "    - Baseline Chunking: 512-1024 tokens with 50-token overlap window",
+                    "    - Parent-Child Chunking: 128-token dense chunks mapped to 1000-token parent context",
+                    "",
+                    "[+] DUAL-CLOUD STACK IMPLEMENTATIONS:",
+                    "    - AWS: S3 ObjectCreated -> SQS -> ECS Fargate -> Titan Embeddings v2 -> OpenSearch",
+                    "    - Azure: Blob Created -> Event Grid -> AKS Worker -> text-embedding-3-large -> AI Search"
+                ]
+            }
+        },
+        {
+            "id": "scene_04_act2_hybrid_search",
+            "narration": "Act 2 tackles retrieval precision. Pure vector search measures semantic similarity, but fails on exact keyword queries like form numbers or error codes. Our solution is two-stage hybrid search: running dense vector cosine similarity alongside sparse BM25 keyword search, combining ranks via Reciprocal Rank Fusion, and applying a Cross-Encoder to trim Top 50 candidates down to 5 high-signal chunks.",
+            "visual": {
+                "type": "bullets",
+                "title": "ACT 2: TWO-STAGE HYBRID RETRIEVAL ENGINE",
+                "subtitle": "Combining dense semantic vectors and sparse BM25 keywords via RRF & Cross-Encoder",
+                "items": [
+                    "[!] PURE VECTOR SEARCH LIMITATIONS:",
+                    "    - Fails on exact keywords (e.g. 'Form 10-K Section 404', exact error codes)",
+                    "",
+                    "[+] TWO-STAGE HYBRID RETRIEVAL:",
+                    "    - Stage 1: Parallel Dense (Cosine) + Sparse (BM25 Lexical Keyword Search)",
+                    "    - Reciprocal Rank Fusion (RRF): RRF_Score(d) = Sum( 1 / (k + rank_m(d)) )",
+                    "    - Stage 2: Cross-Encoder Re-Ranking (Cohere / BGE) prunes Top-50 to Top-5 chunks"
+                ]
+            }
+        },
+        {
+            "id": "scene_05_act3_security_acl",
+            "narration": "Act 3 addresses security. Standard vector databases retrieve matches without checking identity. In our zero-trust architecture, user roles and group memberships extracted from OAuth2 or JWT claims are injected directly into the search engine payload as a mandatory pre-filter. Chunks unauthorized for the user are never retrieved into memory.",
+            "visual": {
+                "type": "code",
+                "title": "ACT 3: ZERO-TRUST ACL PRE-FILTERING",
+                "subtitle": "Enforcing identity-based security constraints directly within the vector query payload",
+                "code": [
+                    "// Synchronous Query Orchestrator with Mandatory Security Claims Pre-Filter",
+                    "public CompletableFuture<RagResponse> executeQuery(UserQueryReq req, JwtClaims claims) {",
+                    "    // Step 1: Inject user security principals directly into search filter payload",
+                    "    String aclFilter = buildAclFilter(claims.getSecurityGroups());",
+                    "    SearchQuery query = SearchQuery.builder()",
+                    "        .text(req.userQuery())",
+                    "        .filter(aclFilter) // Filter: security_groups/any(g: search.in(g, 'Eng, Leads'))",
+                    "        .top(50)",
+                    "        .build();",
+                    "",
+                    "    // Step 2: Retrieve pre-filtered candidates & apply Cross-Encoder re-ranking",
+                    "    List<Chunk> topChunks = vectorSearchClient.searchAndRerank(query, 5);",
+                    "    return chatClient.prompt().system(promptTemplate).user(req.userQuery()).call();",
+                    "}"
+                ]
+            }
+        },
+        {
+            "id": "scene_06_act4_orchestration",
+            "narration": "Act 4 covers orchestration, guardrails, and continuous evaluation. We run a Spring Boot microservice with client-side connection pooling, Resilience4j circuit breakers, and timeout budgets. Bedrock Guardrails or Azure AI Content Safety evaluate boundaries, while OpenTelemetry distributed tracing monitors the RAG Triad: context relevance, faithfulness, and answer relevance.",
+            "visual": {
+                "type": "bullets",
+                "title": "ACT 4: ORCHESTRATION, GUARDRAILS & EVALUATION",
+                "subtitle": "Resilience, content safety boundaries, and continuous OpenTelemetry tracing",
+                "items": [
+                    "[+] RESILIENT ORCHESTRATOR MICROSERVICE:",
+                    "    - Java 21 / Spring Boot 3 with Resilience4j circuit breakers & fallback limits",
+                    "",
+                    "[+] GUARDRAILS & CONTENT SAFETY:",
+                    "    - Amazon Bedrock Guardrails & Azure AI Content Safety enforcing boundary checks",
+                    "",
+                    "[+] OBSERVABILITY & CONTINUOUS EVALUATION:",
+                    "    - Distributed tracing via OpenTelemetry across Gateway -> Store -> LLM",
+                    "    - RAG Triad Eval: Context Relevance, Groundedness/Faithfulness, and Answer Relevance"
+                ]
+            }
+        },
+        {
+            "id": "scene_07_summary",
+            "narration": "Building for production means treating AI not as a black-box novelty, but as a component within a classic, disciplined distributed architecture: asynchronous indexing, hybrid retrieval, strict authorization filters, and end-to-end tracing. Check the repository and Terraform definitions linked below.",
+            "visual": {
+                "type": "bullets",
+                "title": "ENTERPRISE RAG ARCHITECTURAL TAKEAWAYS",
+                "subtitle": "Core requirements for senior engineering teams shipping GenAI systems",
+                "items": [
+                    "[+] 1. Decoupled Ingestion: Asynchronous document parsing, chunking & indexing",
+                    "[+] 2. Hybrid Search (RRF): Combine BM25 keyword precision with dense embeddings",
+                    "[+] 3. Zero-Trust Security: Enforce OAuth2/JWT security group pre-filters at retrieval time",
+                    "[+] 4. Two-Stage Re-Ranking: Prune coarse candidates with Cross-Encoders before prompt packing",
+                    "[+] 5. Resilient Orchestration: Safeguard LLM calls with circuit breakers and full tracing"
+                ]
+            }
+        }
+    ]
+}

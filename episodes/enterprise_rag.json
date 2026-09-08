@@ -1,0 +1,160 @@
+{
+    "title": "Enterprise RAG Architecture",
+    "output_file": "Enterprise_RAG_Architecture.mp4",
+    "output_dir": "output",
+    "voice": "en-US-ChristopherNeural",
+    "scenes": [
+        {
+            "id": "scene_01_hook",
+            "narration": "Anyone can connect a vector database to a language model in twenty lines of code. But in production, naive vector retrieval fails. You face eight-second tail latencies, permission leaks of confidential documents, and semantic drift. Toy RAG is a demo. Production RAG is a distributed systems problem.",
+            "visual": {
+                "type": "bullets",
+                "title": "PRODUCTION RAG vs TOY DEMOS",
+                "subtitle": "The gap between Jupyter prototypes and enterprise production systems",
+                "items": [
+                    "[!] TOY RAG ARCHITECTURAL PITFALLS:",
+                    "    - Unbounded P99 latency spikes over 8.4 seconds",
+                    "    - Document ACL leakage (Confidential compensation & HR data exposed)",
+                    "    - Semantic drift returning outdated 2022 drafts instead of audited filings",
+                    "",
+                    "[+] ENTERPRISE KNOWLEDGE ARCHITECTURE:",
+                    "    - Asynchronous Event-Driven Ingestion with Parent-Child chunking",
+                    "    - Zero-Trust ACL filters injected directly into vector queries",
+                    "    - Two-stage hybrid search combined with Cross-Encoder re-ranking"
+                ]
+            }
+        },
+        {
+            "id": "scene_02_architecture",
+            "narration": "To solve this, we separate our system into two completely decoupled planes. On the left, our Asynchronous Ingestion Plane uses queues to extract structures and index security metadata out of band. On the right, our Query Plane authenticates identity claims before dispatching pre-filtered hybrid queries to the index.",
+            "visual": {
+                "type": "diagram",
+                "title": "Decoupled Enterprise RAG Topology",
+                "layout": "LR",
+                "clusters": [
+                    {
+                        "name": "cluster_ingest",
+                        "label": "Ingestion Plane (Asynchronous)",
+                        "nodes": [
+                            {
+                                "id": "SRC",
+                                "label": "Document Sources\n(S3 / Blob / SharePoint)"
+                            },
+                            {
+                                "id": "QUEUE",
+                                "label": "Message Queue\n(SQS / Event Grid)"
+                            },
+                            {
+                                "id": "WORKER",
+                                "label": "Ingestion Worker\n(Spring Boot on AKS)",
+                                "color": "#0284c7"
+                            }
+                        ]
+                    },
+                    {
+                        "name": "cluster_query",
+                        "label": "Query Plane (Synchronous)",
+                        "nodes": [
+                            {
+                                "id": "USER",
+                                "label": "User Query\n(JWT Claims)"
+                            },
+                            {
+                                "id": "ORCH",
+                                "label": "Orchestrator Service\n(Spring Boot 3)",
+                                "color": "#7e22ce"
+                            },
+                            {
+                                "id": "LLM",
+                                "label": "Foundation Model\n(Bedrock / Azure OpenAI)",
+                                "color": "#4338ca"
+                            }
+                        ]
+                    }
+                ],
+                "standalone_nodes": [
+                    {
+                        "id": "VDB",
+                        "label": "Hybrid Search Engine\n(Azure AI Search / OpenSearch)\n[Dense + BM25 + ACLs]",
+                        "shape": "cylinder",
+                        "color": "#0f766e"
+                    }
+                ],
+                "edges": [
+                    {
+                        "from": "SRC",
+                        "to": "QUEUE"
+                    },
+                    {
+                        "from": "QUEUE",
+                        "to": "WORKER"
+                    },
+                    {
+                        "from": "WORKER",
+                        "to": "VDB",
+                        "label": "Embed & Index"
+                    },
+                    {
+                        "from": "USER",
+                        "to": "ORCH"
+                    },
+                    {
+                        "from": "ORCH",
+                        "to": "VDB",
+                        "label": "Hybrid Query + ACL Filter"
+                    },
+                    {
+                        "from": "VDB",
+                        "to": "ORCH",
+                        "label": "Top Chunks"
+                    },
+                    {
+                        "from": "ORCH",
+                        "to": "LLM",
+                        "label": "Guarded Context"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "scene_03_code",
+            "narration": "Here is the production Spring Boot orchestrator. We wrap the pipeline in a Resilience4j circuit breaker and enforce access control lists directly in the search client. Chunks that the caller is not authorized to see are never loaded into orchestrator memory.",
+            "visual": {
+                "type": "code",
+                "title": "SPRING BOOT QUERY ORCHESTRATOR",
+                "subtitle": "Enforcing resilience and ACL security filtering at retrieval time",
+                "code": [
+                    "@CircuitBreaker(name = \"ragPipeline\", fallbackMethod = \"pipelineFallback\")",
+                    "@TimeLimiter(name = \"ragPipeline\")",
+                    "public CompletableFuture<RagResponse> executeRagQuery(RagQueryRequest req, UserSecurityContext ctx) {",
+                    "    // Step 1: Enforce security principal filters inside the vector engine",
+                    "    List<SearchChunk> candidates = vectorSearchClient.searchWithAclFilter(",
+                    "        req.userQuery(), ctx.securityPrincipals(), req.candidateLimit());",
+                    "",
+                    "    // Step 2: Cross-Encoder Re-Ranking (Prune Top-50 candidates down to Top-5)",
+                    "    List<SearchChunk> prioritized = rerankerClient.rerank(req.userQuery(), candidates, 5);",
+                    "",
+                    "    // Step 3: Guarded Execution via Bedrock or Azure OpenAI",
+                    "    return chatClient.prompt().system(promptTemplate).user(req.userQuery()).call();",
+                    "}"
+                ]
+            }
+        },
+        {
+            "id": "scene_04_summary",
+            "narration": "Building for production means treating AI not as a black-box novelty, but as a component within a disciplined distributed architecture. The companion GitHub repository and Terraform definitions are available in the description below.",
+            "visual": {
+                "type": "bullets",
+                "title": "ARCHITECTURAL TAKEAWAYS",
+                "subtitle": "Core requirements for senior engineering teams shipping GenAI",
+                "items": [
+                    "[+] 1. Decoupled Ingestion: Heavy parsing and OCR must never run synchronously in APIs",
+                    "[+] 2. Hybrid Search (RRF): Combine keyword precision with semantic embeddings",
+                    "[+] 3. Zero-Trust Retrieval: Enforce authorization groups at the search engine boundary",
+                    "[+] 4. Two-Stage Re-Ranking: Eliminate vector noise with cross-encoders before prompt packing",
+                    "[+] 5. Resilient Orchestration: Safeguard LLM calls with circuit breakers and fallback defaults"
+                ]
+            }
+        }
+    ]
+}
